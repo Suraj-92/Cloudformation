@@ -1,0 +1,992 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template creates vpc with public and private subnets
+
+# Parameters are used to to build flexible CloudFormation templates
+Parameters:
+  VpcCIDR:
+    Default: 10.0.0.0/16
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+
+  PublicSubnet1CIDR:
+    Default: 10.0.0.0/24
+    Description: Please enter the IP range (CIDR notation) for the public subnet 1
+    Type: String
+
+  PublicSubnet2CIDR:
+    Default: 10.0.1.0/24
+    Description: Please enter the IP range (CIDR notation) for the public subnet 2
+    Type: String
+
+  PrivateSubnet1CIDR:
+    Default: 10.0.2.0/24
+    Description: Please enter the IP range (CIDR notation) for the private subnet 1
+    Type: String
+
+  PrivateSubnet2CIDR:
+    Default: 10.0.3.0/24
+    Description: Please enter the IP range (CIDR notation) for the private subnet 2
+    Type: String
+
+  PrivateSubnet3CIDR:
+    Default: 10.0.4.0/24
+    Description: Please enter the IP range (CIDR notation) for the private subnet 3
+    Type: String
+
+  PrivateSubnet4CIDR:
+    Default: 10.0.5.0/24
+    Description: Please enter the IP range (CIDR notation) for the private subnet 4
+    Type: String
+
+  SSHLocation:
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
+    Description: The IP address range that can be used to access the web server using SSH.
+    MaxLength: '18'
+    MinLength: '9'
+    Type: String
+
+  DatabaseInstanceIdentifier:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters
+    Default: mysql57db
+    Description: Instance identifier name
+    MaxLength: 60
+    MinLength: 1
+    Type: String
+
+  DatabaseName:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters
+    Default: applicationdb
+    Description: MySQL database name
+    MaxLength: 64
+    MinLength: 1
+    Type: String
+
+  DatabaseUser:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters
+    Default: dbadmin
+    Description: Username for MySQL database access
+    MaxLength: 16
+    MinLength: 1
+    NoEcho: true
+    Type: String
+
+  DatabasePassword:
+    AllowedPattern: '[a-zA-Z0-9]*'
+    ConstraintDescription: Must contain only alphanumeric characters
+    Default: database1407
+    Description: Password for MySQL database access
+    MaxLength: 41
+    MinLength: 8
+    NoEcho: true
+    Type: String
+
+  DatabaseBackupRetentionPeriod:
+    ConstraintDescription: Database backup retention period must be between 0 and 35 days
+    Default: 0
+    Description: The number of days for which automatic DB snapshots are retained
+    MaxValue: 35
+    MinValue: 0
+    Type: Number
+
+  DatabaseAllocatedStorage:
+    ConstraintDescription: Must be between 5 and 1024Gb
+    Default: 20
+    Description: The size of the database (Gb)
+    MaxValue: 65536
+    MinValue: 5
+    Type: Number
+
+  DatabaseInstanceClass:
+    AllowedValues:
+      - db.t1.micro
+      - db.t2.micro
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+    ConstraintDescription: Must select a valid database instance type
+    Default: db.t2.micro
+    Description: The database instance type
+    Type: String
+
+  MultiAZDatabase:
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Must be either true or false
+    Default: false
+    Description: Creates a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t1.micro
+      - t2.nano
+      - t2.micro
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  InstanceType2:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t1.micro
+      - t2.nano
+      - t2.micro
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  AmazonImageID:
+    Description: The ID of the Amazon machine image (AMI)
+    Type: String
+
+  AmazonImageID2:
+    Description: The ID of the Amazon machine image (AMI)
+    Type: String
+
+  Application:
+    Description: Application Name
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+  
+  Environment:
+    AllowedValues: [dev,qa,prod]
+    Default: dev
+    Description: The name of the Environment
+    Type: String
+
+Resources:
+# Create VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Test VPC
+
+# Create Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Test IGW
+
+# Attach Internet Gateway to VPC
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+# Create Public Subnet1
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet 1
+      VpcId: !Ref VPC
+
+# Create Public Subnet2
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet 2
+      VpcId: !Ref VPC
+
+# Create Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Public Route Table
+      VpcId: !Ref VPC
+
+# Add a Public Route to the Route Table
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+# Associate Public Subnet1 with Public Route Table
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+# Associate Public Subnet2 with Public Route Table
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+# Create Private Subnet1
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet 1 | App Tier
+      VpcId: !Ref VPC
+
+# Create Private Subnet2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet 2 | App Tier
+      VpcId: !Ref VPC
+
+# Create Private Subnet3
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet3CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet 3 | Database Tier
+      VpcId: !Ref VPC
+
+# Create Private Subnet4
+  PrivateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      CidrBlock: !Ref PrivateSubnet4CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet 4 | Database Tier
+      VpcId: !Ref VPC
+
+# Create Security Group for the Application Load Balancer 
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP/HTTPS access on port 80/443
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: "0.0.0.0/0"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ALB Security Group
+      VpcId: !Ref VPC
+
+# Create Security Group for the Base
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH Security Group
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+      Tags:
+        - Key: Name
+          Value: SSH Security Group
+      VpcId: !Ref VPC
+
+# Create Security Group for the Web Server
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP/HTTPS access via port 80/443 locked down to the load balancer SG + SSH access via port 22 locked down SSH SG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref SSHSecurityGroup
+      Tags:
+        - Key: Name
+          Value: WebServer Security Group
+      VpcId: !Ref VPC
+
+# Create Security Group for the DataBase
+  DataBaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3306'
+          ToPort: '3306'
+          SourceSecurityGroupId: !Ref WebServerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: DataBase Security Group
+      VpcId: !Ref VPC
+
+  # Allocate Elastic IP Address (EIP 1)
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      Tags:
+        - Key: Name
+          Value: EIP 1
+
+# Allocate Elastic IP Address (EIP 2)
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+      Tags:
+        - Key: Name
+          Value: EIP 2
+
+# Create Nat Gateway 1 in Public Subnet 1    
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: Nat Gateway Public Subnet 1
+
+# Create Nat Gateway 2 in Public Subnet 2
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: Nat Gateway Public Subnet 2
+
+# Create Private Route Table 1 
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Private Route Table 1
+      VpcId: !Ref VPC
+
+# Add a route to point internet-bound traffic to Nat Gateway 1      
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+      RouteTableId: !Ref PrivateRouteTable1
+
+# Associate Private Subnet 1 with Private Route Table 1
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+# Associate Private Subnet 3 with Private Route Table 1
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet3
+
+# Create Private Route Table 2     
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Private Route Table 2
+      VpcId: !Ref VPC
+
+# Add a route to point internet-bound traffic to Nat Gateway 2         
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+      RouteTableId: !Ref PrivateRouteTable2
+
+# Associate Private Subnet 2 with Private Route Table 2
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+
+# Associate Private Subnet 4 with Private Route Table 2
+  PrivateSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet4
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds: 
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+      Tags:
+        - Key: Name
+          Value: database subnets
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      BackupRetentionPeriod: !Ref DatabaseBackupRetentionPeriod
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      DBInstanceIdentifier: !Ref DatabaseInstanceIdentifier
+      DBName: !Ref DatabaseName
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      Engine: MySQL
+      EngineVersion: 5.7.31
+      MasterUsername: !Ref DatabaseUser
+      MasterUserPassword: !Ref DatabasePassword
+      MultiAZ: !Ref MultiAZDatabase
+      #VPCSecurityGroups: !Ref DataBaseSecurityGroup
+
+  EC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet1
+      #SecurityGroupIds: !Ref WebServerSecurityGroup
+      KeyName: !Ref KeyName
+      ImageId: !Ref AmazonImageID 
+      Tags:
+        - Key: Name
+          Value: EC2 | Public Subnet 1
+
+  EC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PrivateSubnet1
+      #SecurityGroupIds: !Ref WebServerSecurityGroup
+      KeyName: !Ref KeyName
+      ImageId: !Ref AmazonImageID 
+      Tags:
+        - Key: Name
+          Value: EC2 | Private Subnet 1
+
+  # Create a Target Group
+  ALBTargetGroupPublic:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: MyWebServersPublic
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref EC2Instance1
+          Port: 80
+        # - Id: !Ref EC2Instance2
+        #   Port: 80
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+
+  ALBTargetGroupPrivate:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: MyWebServersPrivate
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref EC2Instance2
+          Port: 80
+        # - Id: !Ref EC2Instance2
+        #   Port: 80
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+
+  # ALBListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref TargetGroup
+  #         Type: forward
+  #     LoadBalancerArn: !Ref ApplicationLoadBalancerpublic
+  #     Port: 80
+  #     Protocol: HTTP
+
+  # TargetGroup:
+  #   Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  #   Properties:
+  #     Name: TargetGroupPublic
+  #     HealthCheckIntervalSeconds: 30
+  #     HealthCheckProtocol: HTTP
+  #     HealthyThresholdCount: 3
+  #     HealthCheckPath: /
+  #     Matcher:
+  #       HttpCode: 200
+  #     TargetGroupAttributes:
+  #       - Key: deregistration_delay.timeout_seconds
+  #         Value: 20
+  #     VpcId: !Ref VPC
+  #     Port: 80
+  #     Protocol: HTTP
+  #     UnhealthyThresholdCount: 3
+
+  AppserverElbSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: ELB Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          ToPort: 80
+          Description: Allow from internat
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-appserver-elb-sg'
+
+  AppServerSG:
+    Type: AWS::EC2::SecurityGroup    
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Web Server Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref AppserverElbSG
+          ToPort: 80
+          Description: Allow SSH from bastion subnet                                     
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-appserver-sg'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 600
+      SecurityGroups: 
+        - !Ref AppserverElbSG
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  ApplicationLoadBalancer2:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-alb2'
+      Scheme: internal
+      Type: application
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 600
+      SecurityGroups: 
+        - !Ref AppserverElbSG
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener2:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup2
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer2
+      Port: 80
+      Protocol: HTTP
+
+  # ListenerRule1:
+  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
+  #   Properties:
+  #     ListenerArn: !Ref ALBListener
+  #     Priority: 1
+  #     Conditions:
+  #       - Field: http-header
+  #         HttpHeaderConfig:
+  #           HttpHeaderName: User-Agent
+  #           Values:
+  #             - Mozilla
+  #     Actions:
+  #       - TargetGroupArn: !Ref TargetGroup
+  #         Type: forward
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 20
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 20
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+
+
+  LaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref AmazonImageID
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref AppServerSG
+
+  LaunchConfig2:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref AmazonImageID
+      InstanceType: !Ref InstanceType2
+      SecurityGroups:
+        - !Ref AppServerSG
+
+  AppServerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref LaunchConfig
+      MaxSize: 4
+      MinSize: 1
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: True
+          Value: cloudapp1-dev-asg
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      TerminationPolicies:
+        - OldestLaunchConfiguration
+        - OldestInstance
+        - Default
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  AppServerASG2:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref LaunchConfig2
+      MaxSize: 4
+      MinSize: 1
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: True
+          Value: cloudapp1-dev-asg2
+      TargetGroupARNs:
+        - !Ref TargetGroup2
+      TerminationPolicies:
+        - OldestLaunchConfiguration
+        - OldestInstance
+        - Default
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  WebServerScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG'
+      Cooldown: '300'
+      ScalingAdjustment: 1
+
+  WebServerScaleUpPolicy2:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG2'
+      Cooldown: '300'
+      ScalingAdjustment: 1
+
+  WebServerScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG'
+      Cooldown: '60'
+      ScalingAdjustment: -1
+
+  WebServerScaleDownPolicy2:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG2'
+      Cooldown: '60'
+      ScalingAdjustment: -1
+
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 10% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      AlarmActions: [!Ref 'WebServerScaleUpPolicy']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG'
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlarmHigh2:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 10% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      AlarmActions: [!Ref 'WebServerScaleUpPolicy2']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG2'
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 5% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      AlarmActions: [!Ref 'WebServerScaleDownPolicy']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG'
+      ComparisonOperator: LessThanThreshold
+
+  CPUAlarmLow2:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 5% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      AlarmActions: [!Ref 'WebServerScaleDownPolicy2']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG2'
+      ComparisonOperator: LessThanThreshold
+
+# Outputs:
+#   AppELBDNS:
+#     Description: InstanceId of the newly created EC2 instance
+#     Value: !GetAtt [ApplicationLoadBalancer, DNSName]
+
+  # LaunchConfig:
+  #   Type: AWS::AutoScaling::LaunchConfiguration
+  #   Properties:
+  #     ImageId: !Ref AmazonImageID
+  #     InstanceType: !Ref EC2Instance1
+  #     #SecurityGroups: !Ref WebServerSecurityGroup
+
+  # LaunchConfigPublic:
+  #   Type: AWS::AutoScaling::LaunchConfiguration
+  #   Properties:
+  #     ImageId: !Ref AmazonImageID
+  #     InstanceType: !Ref EC2Instance1
+  #     #SecurityGroups: !Ref WebServerSecurityGroup
+
+  # LaunchConfigPrivate:
+  #   Type: AWS::AutoScaling::LaunchConfiguration
+  #   Properties:
+  #     ImageId: !Ref AmazonImageID
+  #     InstanceType: !Ref EC2Instance2
+  #     #SecurityGroups: !Ref WebServerSecurityGroup
+
+# Outputs:
+# # Export VPC ID
+#   VPC:
+#     Description: VPC ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-VPC
+#     Value: !Ref VPC
+
+# # Export Public Subnet 1 
+#   PublicSubnet1:
+#     Description: Public Subnet 1 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PublicSubnet1
+#     Value: !Ref PublicSubnet1
+
+# # Export Public Subnet 2
+#   PublicSubnet2:
+#     Description: Public Subnet 2 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PublicSubnet2
+#     Value: !Ref PublicSubnet2
+
+# # Export Private Subnet 1
+#   PrivateSubnet1:
+#     Description: Private Subnet 1 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PrivateSubnet1
+#     Value: !Ref PrivateSubnet1
+
+# # Export Private Subnet 2
+#   PrivateSubnet2:
+#     Description: Private Subnet 2 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PrivateSubnet2
+#     Value: !Ref PrivateSubnet2
+
+# # Export Private Subnet 3
+#   PrivateSubnet3:
+#     Description: Private Subnet 3 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PrivateSubnet3
+#     Value: !Ref PrivateSubnet3
+
+# # Export Private Subnet 4
+#   PrivateSubnet4:
+#     Description: Private Subnet 4 ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-PrivateSubnet4
+#     Value: !Ref PrivateSubnet4
+
+# # Export ALB Security Group ID
+#   ALBSecurityGroup:
+#     Description: Application Load Balancer Security Group ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-ALBSecurityGroup
+#     Value: !Ref ALBSecurityGroup
+
+# # Export SSH Security Group ID
+#   SSHSecurityGroup:
+#     Description: SSH Security Group ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-SSHSecurityGroup
+#     Value: !Ref SSHSecurityGroup
+
+# # Export WebServer Security Group ID
+#   WebServerSecurityGroup:
+#     Description: Webserver Security Group ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-WebServerSecurityGroup
+#     Value: !Ref WebServerSecurityGroup
+
+# # Export DataBase Security Group ID
+#   DataBaseSecurityGroup:
+#     Description: DataBase Security Group ID
+#     Export:
+#       Name: !Sub ${AWS::StackName}-DataBaseSecurityGroup
+#     Value: !Ref DataBaseSecurityGroup

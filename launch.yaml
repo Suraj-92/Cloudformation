@@ -1,0 +1,380 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Basic template that defines a single Amazon EC2 instance with a security group that allows SSH traffic on port 22 and HTTP traffic on port 80 on Linux Virtual Machine.
+
+Parameters: 
+  VpcId: 
+    Description: VPC id 
+    Type: String
+    Default: vpc-0a421eb82fa32c6a9
+
+  PublicSubnet1:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-04fab3f2e32311975
+
+  PublicSubnet2:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-087af3ec709f5ee1d
+
+  PrivateSubnet1:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-0120d15f349298546
+
+  PrivateSubnet2:
+    Description: Subnet Id where instance will create 
+    Type: String
+    Default: subnet-0bbc6f76706dfc45a
+
+  InstanceType:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro]
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  InstanceType2:
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t2.micro]
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  Application:
+    Description: Application Name
+    Type: String
+    AllowedPattern: "[A-Za-z0-9]+"
+  
+  Environment:
+    AllowedValues: [dev,qa,venv]
+    Default: venv
+    Description: The name of the Environment
+    Type: String
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+  LatestAmiId:
+    Description: The ID of the Amazon machine image (AMI)
+    Type: String
+
+  LatestAmiId2:
+    Description: The ID of the Amazon machine image (AMI)
+    Type: String
+
+Resources:
+  AppserverElbSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: ELB Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          ToPort: 80
+          Description: Allow from internat
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-appserver-elb-sg'
+
+  AppServerSG:
+    Type: AWS::EC2::SecurityGroup    
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Web Server Security Group
+      SecurityGroupIngress:
+        - FromPort: 80
+          IpProtocol: tcp
+          SourceSecurityGroupId: !Ref AppserverElbSG
+          ToPort: 80
+          Description: Allow SSH from bastion subnet                                     
+      Tags:
+      - Key: Name
+        Value: !Sub '${Application}-appserver-sg'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      #KeyName: !Ref KeyName
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 600
+      SecurityGroups: 
+        - !Ref AppserverElbSG
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  ApplicationLoadBalancer2:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-alb2'
+      Scheme: internal
+      Type: application
+      IpAddressType: ipv4
+      #KeyName: !Ref KeyName
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 600
+      SecurityGroups: 
+        - !Ref AppserverElbSG
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  ALBListener2:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup2
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadBalancer2
+      Port: 80
+      Protocol: HTTP
+
+  # ListenerRule1:
+  #   Type: AWS::ElasticLoadBalancingV2::ListenerRule
+  #   Properties:
+  #     ListenerArn: !Ref ALBListener
+  #     Priority: 1
+  #     Conditions:
+  #       - Field: http-header
+  #         HttpHeaderConfig:
+  #           HttpHeaderName: User-Agent
+  #           Values:
+  #             - Mozilla
+  #     Actions:
+  #       - TargetGroupArn: !Ref TargetGroup
+  #         Type: forward
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 20
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthyThresholdCount: 3
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 20
+      VpcId: !Ref VpcId
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+
+
+  LaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref AppServerSG
+
+  LaunchConfig2:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      ImageId: !Ref LatestAmiId2
+      InstanceType: !Ref InstanceType2
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref AppServerSG
+
+  AppServerASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref LaunchConfig
+      MaxSize: 4
+      MinSize: 1
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: True
+          Value: cloudapp1-dev-asg
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      TerminationPolicies:
+        - OldestLaunchConfiguration
+        - OldestInstance
+        - Default
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  AppServerASG2:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      HealthCheckType: EC2
+      LaunchConfigurationName: !Ref LaunchConfig2
+      MaxSize: 4
+      MinSize: 1
+      MetricsCollection:
+        - Granularity: 1Minute
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: True
+          Value: cloudapp1-dev-asg2
+      TargetGroupARNs:
+        - !Ref TargetGroup2
+      TerminationPolicies:
+        - OldestLaunchConfiguration
+        - OldestInstance
+        - Default
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  WebServerScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG'
+      Cooldown: '300'
+      ScalingAdjustment: 1
+
+  WebServerScaleUpPolicy2:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG2'
+      Cooldown: '300'
+      ScalingAdjustment: 1
+
+  WebServerScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG'
+      Cooldown: '60'
+      ScalingAdjustment: -1
+
+  WebServerScaleDownPolicy2:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'AppServerASG2'
+      Cooldown: '60'
+      ScalingAdjustment: -1
+
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 10% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      AlarmActions: [!Ref 'WebServerScaleUpPolicy']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG'
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlarmHigh2:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 10% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 10
+      AlarmActions: [!Ref 'WebServerScaleUpPolicy2']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG2'
+      ComparisonOperator: GreaterThanThreshold
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 5% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      AlarmActions: [!Ref 'WebServerScaleDownPolicy']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG'
+      ComparisonOperator: LessThanThreshold
+
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 5% for 1 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 5
+      AlarmActions: [!Ref 'WebServerScaleDownPolicy2']
+      Dimensions:
+      - Name: AutoScalingGroupName
+        Value: !Ref 'AppServerASG2'
+      ComparisonOperator: LessThanThreshold
+
+# Outputs:
+#   AppELBDNS:
+#     Description: InstanceId of the newly created EC2 instance
+#     Value: !GetAtt [ApplicationLoadBalancer, DNSName]
